@@ -72,12 +72,12 @@ static int iicread(unsigned int iicbus, unsigned int deviceadd, unsigned int off
         return -1;
     }
     deviceadd|=1;        //LSB =1, for read
-    if((deviceadd!=(BQ34Z_ADDR|1))&&(deviceadd!=(AT24C_ADDR|1)))
+    if((deviceadd!=(BQ34Z_ADDR|1))&&(deviceadd!=(RUBY_AT24C_ADDR|1))&&(deviceadd!=(EEPROM_AT24C_ADDR|1)))
     {
-        fprintf(stderr, "invalid deviceadd value!");
+       fprintf(stderr, "invalid deviceadd value!");
         // fprintf(stderr, "value should be %d or %d, 
 	    //but received %d",BQ34Z_ADDR|1,AT24C_ADDR|1,deviceadd);
-        return -1;
+       return -1;
     }
     if(length>MAX_IIC)
     {
@@ -96,7 +96,7 @@ static int iicread(unsigned int iicbus, unsigned int deviceadd, unsigned int off
     }
     if(i>=100)                          //out of time case
     {
-        fprintf(stderr, "iic bus busy!");
+        fprintf(stderr, "MCU is busy!");
         //fprintf(stderr, "iic status register=%d\r\n",value);
         return -1;
     }
@@ -234,30 +234,65 @@ int ver_read()
 	printf("Firmware Version: %d.%d\n",read_ruby(CODE_VER),read_ruby(CODE_TEST_VER));
 }
 
-int read_sn()
+int read_sn(int bbu)
 {
-	if(iicread(2, AT24C_ADDR, 0x44,12))
-        printf("read SN failed!\n");
+    //I got the device address by reading all possible addresses from A0 to AF;
+    //And the offset is 0x44, length is 12;
+    int iicbus;
+    unsigned int AT24C_ADDR;
+    char * SN_Name;
 
-	printf("Ruby SN:%s\n",iicbuff);
+    if(bbu!=0&&bbu!=1&&bbu!=2)
+    {
+        fprintf(stderr,"bbu value out of range!\n0.Ruby Backplate,  1.BBU1,    2.BBU2\n");
+        return -1;
+    }
+
+    switch(bbu) {
+      case 1:
+        SN_Name="BBU1";
+	iicbus = 1;
+        AT24C_ADDR = EEPROM_AT24C_ADDR;
+        break;
+      case 2:
+        SN_Name="BBU2";
+	iicbus = 2;
+        AT24C_ADDR = EEPROM_AT24C_ADDR;
+        break;
+      default:
+        SN_Name="Ruby";
+	iicbus = 2;
+        AT24C_ADDR = RUBY_AT24C_ADDR;
+    }
+
+    if(iicread(iicbus, AT24C_ADDR, 0x44,12))
+    printf("read SN failed!\n");
+
+    printf("%s SN:%s\n",SN_Name,iicbuff);
 }
 
 int debug()
 {
-	printf("BBU1_DSG_ENABLE_N: %d\n",read_ruby(BBU1_DSG_ENABLE_N));
-	printf("BBU1_CHG_ENABLE_N: %d\n",read_ruby(BBU1_CHG_ENABLE_N));
-	printf("BBU1_SLOW_CHARGE_N: %d\n",read_ruby(BBU1_SLOW_CHARGE_N));
-	printf("______________________________________________________\n");
-	printf("BBU2_DSG_ENABLE_N: %d\n",read_ruby(BBU2_DSG_ENABLE_N));
-	printf("BBU2_CHG_ENABLE_N: %d\n",read_ruby(BBU2_CHG_ENABLE_N));
-	printf("BBU2_SLOW_CHARGE_N: %d\n",read_ruby(BBU2_SLOW_CHARGE_N));
+	//printf("BBU1_DSG_ENABLE_N: %d\n",read_ruby(BBU1_DSG_ENABLE_N));
+	//printf("BBU1_CHG_ENABLE_N: %d\n",read_ruby(BBU1_CHG_ENABLE_N));
+	//printf("BBU1_SLOW_CHARGE_N: %d\n",read_ruby(BBU1_SLOW_CHARGE_N));
+	//printf("______________________________________________________\n");
+	//printf("BBU2_DSG_ENABLE_N: %d\n",read_ruby(BBU2_DSG_ENABLE_N));
+	//printf("BBU2_CHG_ENABLE_N: %d\n",read_ruby(BBU2_CHG_ENABLE_N));
+	//printf("BBU2_SLOW_CHARGE_N: %d\n",read_ruby(BBU2_SLOW_CHARGE_N));
+        unsigned char i;
+	//if(iicread(1, 0xAA, 0x6d,0x1))
+	//if(iicread(2, AT24C_ADDR, 0x44,0x1f))
+	    printf("______________________________________________________\n");
+            
+	    if(iicread(2,0xA1, 0x44,12))
+            printf("read failed!\n");
+	    printf("GET:%s",iicbuff);
+            printf("********************************************************\n");
 }
 
 int BBUctrl(int bbu, int ctrl)
 {
-    unsigned int BBU_FCC;
-	unsigned int BBU_RMC;
-	
     if(bbu!=1&&bbu!=2)
     {
         fprintf(stderr,"bbu value out of range!\n");
@@ -372,6 +407,17 @@ int BBUctrl(int bbu, int ctrl)
 		printf("BBU2_CHG_ENABLE_N: %d\n",read_ruby(BBU2_CHG_ENABLE_N));
 		printf("BBU2_SLOW_CHARGE_N: %d\n",read_ruby(BBU2_SLOW_CHARGE_N));
 	}
+}
+
+int status_check(int bbu)
+{
+	unsigned int BBU_FCC;
+	unsigned int BBU_RMC;
+    if(bbu!=1&&bbu!=2)
+    {
+        fprintf(stderr,"bbu value out of range!\n");
+        return -1;
+    }
 	
 	//get the state of charge
     if(iicread(bbu, BQ34Z_ADDR, BQ34Z_SOC, 2))
